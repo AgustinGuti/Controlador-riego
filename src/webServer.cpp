@@ -8,6 +8,8 @@ void handleSectorPost();
 void handleSectorGet();
 void handleSectorsGet();
 
+extern const char *dayNames[];
+
 void startWebServer()
 {
     // TODO add authentication
@@ -42,11 +44,17 @@ void handleSectorsGet()
         jsonObject["sector"] = i + 1;
         jsonObject["duracion"] = programa.duracion;
         jsonObject["horaInicio"] = programa.horaInicio;
-        jsonObject["dias"] = (int)programa.dias;
+        JsonObject diasObject = jsonObject.createNestedObject("dias");
+        for (int j = 0; j < 7; j++)
+        {
+            diasObject[dayNames[j]] = (programa.dias & (1 << j)) != 0;
+        }
     }
 
     String response;
     serializeJson(jsonArray, response);
+
+    Serial.println("Sectors get response:" + response);
 
     server.send(200, "application/json", response);
 }
@@ -66,12 +74,19 @@ void handleSectorGet()
     DynamicJsonDocument jsonDocument(JSON_SIZE);
     JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
+    jsonObject["sector"] = sector;
     jsonObject["duracion"] = programa.duracion;
     jsonObject["horaInicio"] = programa.horaInicio;
-    jsonObject["dias"] = (int)programa.dias;
+    JsonObject diasObject = jsonObject.createNestedObject("dias");
+    for (int j = 0; j < 7; j++)
+    {
+        diasObject[dayNames[j]] = (programa.dias & (1 << j)) != 0;
+    }
 
     String response;
     serializeJson(jsonObject, response);
+
+    Serial.println("Sector get response:" + response);
 
     server.send(200, "application/json", response);
 }
@@ -91,8 +106,6 @@ void handleSectorPost()
     DynamicJsonDocument jsonDocument(JSON_SIZE);
     DeserializationError error = deserializeJson(jsonDocument, server.arg("plain"));
 
-    Serial.println(server.arg("plain"));
-
     if (error)
     {
         Serial.print("Failed to parse JSON: ");
@@ -100,6 +113,8 @@ void handleSectorPost()
         server.send(400, "text/plain", "Bad Request - Invalid JSON");
         return;
     }
+
+    Serial.println(server.arg("plain"));
 
     Programa programa = fromJson(jsonDocument.as<JsonObject>());
     if (programa != programas[sector])

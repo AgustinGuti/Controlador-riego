@@ -1,10 +1,18 @@
 #include "programa.h"
 
+extern const char *dayNames[];
+
 Programa fromJson(JsonObject jsonObject)
 {
     Programa programa;
     programa.duracion = jsonObject["duracion"].as<unsigned int>();
     programa.horaInicio = jsonObject["horaInicio"].as<unsigned int>();
+    programa.dias = 0;
+    for (int j = 0; j < 7; j++)
+    {
+        programa.dias |= (jsonObject["dias"][dayNames[j]] != 0) << j;
+    }
+
     programa.dias = jsonObject["dias"].as<unsigned int>();
     return programa;
 }

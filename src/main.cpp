@@ -25,6 +25,7 @@ unsigned long previousMillis = 0;
 void setup()
 {
   Serial.begin(115200);
+  Serial.println("Booting: Version" + String(VERSION));
 
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.get(addr, programas);
