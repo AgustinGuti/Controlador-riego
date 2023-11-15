@@ -8,6 +8,7 @@ Programa fromJson(JsonObject jsonObject)
     programa.duracion = jsonObject["duracion"].as<unsigned int>();
     programa.horaInicio = jsonObject["horaInicio"].as<unsigned int>();
     programa.dias = 0;
+    programa.dias |= jsonObject["enabled"] != 0 << 7;
     for (int j = 0; j < 7; j++)
     {
         programa.dias |= (jsonObject["dias"][dayNames[j]] != 0) << j;
@@ -19,7 +20,12 @@ Programa fromJson(JsonObject jsonObject)
 
 bool shouldWater(Programa *programa, DayTime *dayTime)
 {
-    return programa->dias & (1 << dayTime->day) && getDayMinutes(dayTime) >= programa->horaInicio && getDayMinutes(dayTime) < programa->horaInicio + programa->duracion;
+    return isSectorEnabled(programa) && programa->dias & (1 << dayTime->day) && getDayMinutes(dayTime) >= programa->horaInicio && getDayMinutes(dayTime) < programa->horaInicio + programa->duracion;
+}
+
+bool isSectorEnabled(Programa *programa)
+{
+    return programa->dias & (1 << 7);
 }
 
 bool operator==(const Programa &p1, const Programa &p2)

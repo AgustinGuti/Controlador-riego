@@ -9,6 +9,7 @@
 #include "utils.h"
 
 extern Programa programas[SECTOR_QTY];
+extern bool allEnabled;
 
 void startWebServer();
 

@@ -7,6 +7,7 @@ ESP8266WebServer server(80); // Create an instance of the server on port 80
 void handleSectorPost();
 void handleSectorGet();
 void handleSectorsGet();
+void handleSetEnabled();
 
 extern const char *dayNames[];
 
@@ -18,6 +19,7 @@ void startWebServer()
     server.on("/sectors", handleSectorsGet);
     server.on("/sectors/:id", handleSectorGet);
     server.on("/sectors/:id", HTTP_POST, handleSectorPost);
+    server.on("/enable", HTTP_POST, handleSetEnabled);
 
     ElegantOTA.begin(&server); // Start ElegantOTA
     server.begin();            // Start the server
@@ -40,11 +42,14 @@ void handleSectorsGet()
         Programa programa = programas[i];
 
         JsonObject jsonObject = jsonArray.createNestedObject();
+        jsonObject["enabled"] = allEnabled;
 
-        jsonObject["sector"] = i + 1;
-        jsonObject["duracion"] = programa.duracion;
-        jsonObject["horaInicio"] = programa.horaInicio;
-        JsonObject diasObject = jsonObject.createNestedObject("dias");
+        JsonObject sectorsObject = jsonObject.createNestedObject("sectors");
+        sectorsObject["sector"] = i + 1;
+        sectorsObject["duracion"] = programa.duracion;
+        sectorsObject["horaInicio"] = programa.horaInicio;
+        sectorsObject["enabled"] = isSectorEnabled(&programa);
+        JsonObject diasObject = sectorsObject.createNestedObject("dias");
         for (int j = 0; j < 7; j++)
         {
             diasObject[dayNames[j]] = (programa.dias & (1 << j)) != 0;
@@ -77,6 +82,7 @@ void handleSectorGet()
     jsonObject["sector"] = sector;
     jsonObject["duracion"] = programa.duracion;
     jsonObject["horaInicio"] = programa.horaInicio;
+    jsonObject["enabled"] = isSectorEnabled(&programa);
     JsonObject diasObject = jsonObject.createNestedObject("dias");
     for (int j = 0; j < 7; j++)
     {
@@ -90,10 +96,9 @@ void handleSectorGet()
 
     server.send(200, "application/json", response);
 }
-
+// TODO add authentication
 void handleSectorPost()
 {
-    // TODO ask if i should check watering times don't overlap
     String id = server.pathArg(0);
     int sector = atoi(id.c_str());
 
@@ -126,4 +131,38 @@ void handleSectorPost()
 
     programas[sector] = programa;
     server.send(200, "text/plain", "OK");
+}
+
+void handleSetEnabled()
+{
+    DynamicJsonDocument jsonDocument(JSON_SIZE);
+    DeserializationError error = deserializeJson(jsonDocument, server.arg("plain"));
+
+    if (error)
+    {
+        Serial.print("Failed to parse JSON: ");
+        Serial.println(error.c_str());
+        server.send(400, "text/plain", "Bad Request - Invalid JSON");
+        return;
+    }
+
+    Serial.println(server.arg("plain"));
+    Serial.println(jsonDocument["enabled"].as<bool>());
+
+    allEnabled = jsonDocument["enabled"].as<bool>();
+
+    Serial.println("Saving to EEPROM");
+
+    DynamicJsonDocument jsonDocument(JSON_SIZE);
+    JsonArray jsonArray = jsonDocument.to<JsonArray>();
+
+    JsonObject jsonObject = jsonArray.createNestedObject();
+    jsonObject["enabled"] = allEnabled;
+
+    String response;
+    serializeJson(jsonArray, response);
+
+    Serial.println("Sectors get response:" + response);
+
+    server.send(200, "application/json", response);
 }

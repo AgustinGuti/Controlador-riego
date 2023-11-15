@@ -16,6 +16,8 @@ const char *ssid = "SSID";
 const char *password = "PASSWORD";
 
 Programa programas[SECTOR_QTY];
+bool allEnabled;
+
 int outputPins[SECTOR_QTY] = {D1, D2, D3, D4, D5, D6, D7, D8};
 
 uint addr = 0;
@@ -28,7 +30,8 @@ void setup()
   Serial.println("Booting: Version" + String(VERSION));
 
   EEPROM.begin(EEPROM_SIZE);
-  EEPROM.get(addr, programas);
+  EEPROM.get(addr, allEnabled);
+  EEPROM.get(addr + sizeof(allEnabled), programas);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -65,12 +68,17 @@ void loop()
     previousMillis = currentMillis;
     DayTime dayTime;
     getDayTime(&dayTime);
+    Serial.print("Day:");
+    Serial.println(dayTime.day);
+    Serial.print("Hour:");
+    Serial.println(dayTime.hour);
+    Serial.print("Minutes:");
+    Serial.println(dayTime.minutes);
 
     for (int i = 0; i < SECTOR_QTY; i++)
     {
       Programa programa = programas[i];
-      Serial.println(dayTime.day);
-      // TODO ask if i should check if the sector is already on
+
       if (shouldWater(&programa, &dayTime))
       {
         digitalWrite(outputPins[i], HIGH);
