@@ -11,6 +11,8 @@
 extern Programa programas[SECTOR_QTY];
 extern bool allEnabled;
 
+extern bool receivedChange;
+
 void startWebServer();
 
 void handleWebServer();

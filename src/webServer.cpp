@@ -10,6 +10,7 @@ void handleSectorsGet();
 void handleSetEnabled();
 
 extern const char *dayNames[];
+bool receivedChange = false;
 
 void startWebServer()
 {
@@ -32,28 +33,37 @@ void handleWebServer()
     server.handleClient();
 }
 
+void buildZoneObject(JsonObject *jsonObject, int sector)
+{
+    Programa programa = programas[sector];
+
+    (*jsonObject)["sector"] = sector;
+    (*jsonObject)["duration"] = programa.duracion;
+    (*jsonObject)["startTime"] = programa.horaInicio;
+    (*jsonObject)["enabled"] = IS_ENABLED(programa);
+    (*jsonObject)["manual"] = IS_MANUAL(programa);
+    (*jsonObject)["isOn"] = IS_ON(programa);
+    JsonObject diasObject = (*jsonObject).createNestedObject("days");
+    for (int j = 0; j < 7; j++)
+    {
+        diasObject[dayNames[j]] = (programa.dias & (1 << j)) != 0;
+    }
+}
+
 void handleSectorsGet()
 {
     DynamicJsonDocument jsonDocument(JSON_SIZE);
-    JsonArray jsonArray = jsonDocument.to<JsonArray>();
+    JsonObject jsonGeneralObject = jsonDocument.to<JsonObject>();
+    jsonGeneralObject["enabled"] = allEnabled;
+    JsonArray jsonArray = jsonGeneralObject.createNestedArray("sectors");
+
+    // JsonObject jsonObject = jsonArray.createNestedObject();
 
     for (int i = 0; i < SECTOR_QTY; i++)
     {
-        Programa programa = programas[i];
-
         JsonObject jsonObject = jsonArray.createNestedObject();
-        jsonObject["enabled"] = allEnabled;
 
-        JsonObject sectorsObject = jsonObject.createNestedObject("sectors");
-        sectorsObject["sector"] = i + 1;
-        sectorsObject["duracion"] = programa.duracion;
-        sectorsObject["horaInicio"] = programa.horaInicio;
-        sectorsObject["enabled"] = isSectorEnabled(&programa);
-        JsonObject diasObject = sectorsObject.createNestedObject("dias");
-        for (int j = 0; j < 7; j++)
-        {
-            diasObject[dayNames[j]] = (programa.dias & (1 << j)) != 0;
-        }
+        buildZoneObject(&jsonObject, i);
     }
 
     String response;
@@ -74,20 +84,10 @@ void handleSectorGet()
         return;
     }
 
-    Programa programa = programas[sector];
-
     DynamicJsonDocument jsonDocument(JSON_SIZE);
     JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
-    jsonObject["sector"] = sector;
-    jsonObject["duracion"] = programa.duracion;
-    jsonObject["horaInicio"] = programa.horaInicio;
-    jsonObject["enabled"] = isSectorEnabled(&programa);
-    JsonObject diasObject = jsonObject.createNestedObject("dias");
-    for (int j = 0; j < 7; j++)
-    {
-        diasObject[dayNames[j]] = (programa.dias & (1 << j)) != 0;
-    }
+    buildZoneObject(&jsonObject, sector);
 
     String response;
     serializeJson(jsonObject, response);
@@ -96,6 +96,7 @@ void handleSectorGet()
 
     server.send(200, "application/json", response);
 }
+
 // TODO add authentication
 void handleSectorPost()
 {
@@ -130,6 +131,7 @@ void handleSectorPost()
     }
 
     programas[sector] = programa;
+    receivedChange = true;
     server.send(200, "text/plain", "OK");
 }
 
@@ -153,8 +155,8 @@ void handleSetEnabled()
 
     Serial.println("Saving to EEPROM");
 
-    DynamicJsonDocument jsonDocument(JSON_SIZE);
-    JsonArray jsonArray = jsonDocument.to<JsonArray>();
+    DynamicJsonDocument jsonDocumentAnswer(JSON_SIZE);
+    JsonArray jsonArray = jsonDocumentAnswer.to<JsonArray>();
 
     JsonObject jsonObject = jsonArray.createNestedObject();
     jsonObject["enabled"] = allEnabled;
@@ -164,5 +166,6 @@ void handleSetEnabled()
 
     Serial.println("Sectors get response:" + response);
 
+    receivedChange = true;
     server.send(200, "application/json", response);
 }

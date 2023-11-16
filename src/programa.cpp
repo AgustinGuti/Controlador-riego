@@ -5,27 +5,26 @@ extern const char *dayNames[];
 Programa fromJson(JsonObject jsonObject)
 {
     Programa programa;
-    programa.duracion = jsonObject["duracion"].as<unsigned int>();
-    programa.horaInicio = jsonObject["horaInicio"].as<unsigned int>();
+    programa.duracion = jsonObject["duration"].as<unsigned int>();
+    programa.horaInicio = jsonObject["startTime"].as<unsigned int>();
     programa.dias = 0;
     programa.dias |= jsonObject["enabled"] != 0 << 7;
+    programa.manual = 0;
+    programa.manual |= jsonObject["manual"] != 0 << 7;
+    programa.manual |= jsonObject["isOn"] != 0 << 6;
     for (int j = 0; j < 7; j++)
     {
-        programa.dias |= (jsonObject["dias"][dayNames[j]] != 0) << j;
+        programa.dias |= (jsonObject["days"][dayNames[j]] != 0) << j;
     }
-
-    programa.dias = jsonObject["dias"].as<unsigned int>();
     return programa;
 }
 
 bool shouldWater(Programa *programa, DayTime *dayTime)
 {
-    return isSectorEnabled(programa) && programa->dias & (1 << dayTime->day) && getDayMinutes(dayTime) >= programa->horaInicio && getDayMinutes(dayTime) < programa->horaInicio + programa->duracion;
-}
-
-bool isSectorEnabled(Programa *programa)
-{
-    return programa->dias & (1 << 7);
+    return (IS_MANUAL(*programa) && IS_ON(*programa)) ||
+           (!IS_MANUAL(*programa) && IS_ENABLED(*programa) &&
+            IS_DAY_SET(*programa, dayTime->day) &&
+            getDayMinutes(dayTime) >= programa->horaInicio && getDayMinutes(dayTime) < programa->horaInicio + programa->duracion);
 }
 
 bool operator==(const Programa &p1, const Programa &p2)

@@ -12,8 +12,8 @@
 
 // TODO Replace with your network credentials
 
-const char *ssid = "SSID";
-const char *password = "PASSWORD";
+const char *ssid = "TP-Link_EBB6";
+const char *password = "76450853";
 
 Programa programas[SECTOR_QTY];
 bool allEnabled;
@@ -36,9 +36,9 @@ void setup()
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
-  IPAddress staticIP(192, 168, 1, 10); // Set your desired static IP address
-  IPAddress gateway(192, 168, 1, 1);   // Set your router's IP address
-  IPAddress subnet(255, 255, 255, 0);  // Set your subnet mask
+  IPAddress staticIP(192, 168, 1, 200); // Set your desired static IP address
+  IPAddress gateway(192, 168, 1, 1);    // Set your router's IP address
+  IPAddress subnet(255, 255, 255, 0);   // Set your subnet mask
 
   WiFi.config(staticIP, gateway, subnet);
 
@@ -63,7 +63,7 @@ void loop()
   handleWebServer();
   unsigned long currentMillis = millis();
 
-  if (currentMillis - previousMillis >= CHECK_INTERVAL)
+  if (receivedChange || (currentMillis - previousMillis >= CHECK_INTERVAL))
   {
     previousMillis = currentMillis;
     DayTime dayTime;
