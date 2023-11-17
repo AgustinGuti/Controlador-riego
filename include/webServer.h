@@ -8,8 +8,7 @@
 #include "programa.h"
 #include "utils.h"
 
-extern Programa programas[SECTOR_QTY];
-extern bool allEnabled;
+extern Settings settings;
 
 extern bool receivedChange;
 

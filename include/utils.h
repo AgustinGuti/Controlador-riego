@@ -4,10 +4,11 @@
 #include <Arduino.h>
 #include "programa.h"
 
-#define SECTOR_QTY 8
 #define VERSION "0.1"
 
-static const char *dayNames[] = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"};
+extern char programToRun;
+extern char runningProgram;
+extern bool stopProgram;
 
 uint calculateProgramOffset(char sector);
 

@@ -2,5 +2,6 @@
 
 uint calculateProgramOffset(char sector)
 {
-    return (sector - 1) * sizeof(Programa);
+    // 1 char for all enabled byte
+    return sizeof(char) + (sector - 1) * sizeof(Programa);
 }
