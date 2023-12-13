@@ -13,6 +13,10 @@
 #define TURN_ON(X) digitalWrite((X), LOW) // X is the pin number
 #define TURN_OFF(X) digitalWrite((X), HIGH)
 
+// TODO change to / 1000, 100 is for faster testing
+// Checks if the sector should change. If the current time minus the start time is greater than the duration, change sector
+#define SHOULD_CHANGE_SECTOR(CURR, START, DUR) ((CURR) - (START)) / 100 / 60 >= (DUR)
+
 signed char runningProgram = -1;
 bool stopProgram = false;
 
@@ -21,7 +25,9 @@ unsigned int sectorDuration = 0;
 bool stopManualSector = false;
 
 void endProgram(unsigned long currentMillis);
+void endSector();
 void handleProgram(unsigned long currentMillis);
+void handleSector(unsigned long currentMillis);
 
 // TODO make configurable
 const char *ssid = "TP-Link_EBB6";
@@ -39,201 +45,199 @@ Settings settings;
 
 void setup()
 {
-  Serial.begin(115200);
-  Serial.println("Booting: Version" + String(VERSION));
+	Serial.begin(115200);
+	Serial.println("Booting: Version" + String(VERSION));
 
-  EEPROM.begin(EEPROM_SIZE);
+	EEPROM.begin(EEPROM_SIZE);
 
-  EEPROM.get(addr, settings);
+	EEPROM.get(addr, settings);
 
-  WiFi.mode(WIFI_STA);
+	WiFi.mode(WIFI_STA);
 
-  IPAddress staticIP(192, 168, 0, 200); // Set your desired static IP address
-  IPAddress gateway(192, 168, 0, 1);    // Set your router's IP address
-  IPAddress subnet(255, 255, 255, 0);   // Set your subnet mask
+	IPAddress staticIP(192, 168, 0, 200); // Set your desired static IP address
+	IPAddress gateway(192, 168, 0, 1);	  // Set your router's IP address
+	IPAddress subnet(255, 255, 255, 0);	  // Set your subnet mask
 
-  WiFi.config(staticIP, gateway, subnet);
+	WiFi.config(staticIP, gateway, subnet);
 
-  WiFi.begin(ssid, password);
+	WiFi.begin(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
-  // TODO add local network if it cant connect to the internet
+	while (WiFi.status() != WL_CONNECTED)
+	{
+		delay(500);
+		Serial.print(".");
+	}
+	// TODO add local network if it cant connect to the internet
 
-  startWebServer();
+	startWebServer();
 
-  for (int i = 0; i < SECTOR_QTY; i++)
-  {
-    pinMode(outputPins[i], OUTPUT);
-    TURN_OFF(outputPins[i]);
-  }
-  pinMode(outputPumpPin, OUTPUT);
-  TURN_OFF(outputPumpPin);
+	for (int i = 0; i < SECTOR_QTY; i++)
+	{
+		pinMode(outputPins[i], OUTPUT);
+		TURN_OFF(outputPins[i]);
+	}
+	pinMode(outputPumpPin, OUTPUT);
+	TURN_OFF(outputPumpPin);
 
-  memset(&sectorsStatus, 0, sizeof(sectorsStatus));
+	memset(&sectorsStatus, 0, sizeof(sectorsStatus));
 }
 
 unsigned long currentSectorStartTime = 0;
 
-bool isWaitingManual = false;
-bool isWaiting = false;
 bool isPumpOn = false;
 
 void loop()
 {
-  handleWebServer();
+	handleWebServer();
 
-  unsigned long currentMillis = millis();
+	unsigned long currentMillis = millis();
 
-  // If a new program was received, and there is no program running, start it.
-  // Else, if there is a program running, check if it finished / change zones.
-  if (receivedChange || (currentMillis - previousMillis >= CHECK_INTERVAL) || isWaiting || isWaitingManual)
-  {
-    if (receivedChange)
-    {
-      receivedChange = false;
-    }
-    if (stopProgram)
-    {
-      Serial.println("Stopping program");
-      // isEnding = true;
-      endProgram(currentMillis);
-      stopProgram = false;
-      return;
-    }
-    /*
-    if (manualSector > -1 && sectorDuration > 0)
-    {
-      if (!isPumpOn)
-      {
-        TURN_ON(outputPumpPin);
-        isPumpOn = true;
-        isWaitingManual = true;
-      }
+	// If a new program was received, and there is no program running, start it.
+	// Else, if there is a program running, check if it finished / change zones.
+	if (receivedChange || (currentMillis - previousMillis >= CHECK_INTERVAL))
+	{
+		receivedChange = false;
+		if (manualSector > -1 && sectorDuration > 0 || stopManualSector)
+		{
+			handleSector(currentMillis);
+		}
+		if (runningProgram > -1)
+		{
+			handleProgram(currentMillis);
+		}
+		previousMillis = currentMillis;
+	}
+}
 
-      // Espero 10 segundos antes de prender el siguiente sector luego de prender la bomba
-      if (isWaitingManual && previousMillis + OVERLAP_TIME < currentMillis)
-      {
-        isWaitingManual = false;
-      }
-      else
-      {
-        isWaitingManual = true;
-        return;
-      }
+void turnPumpOnAndDelay()
+{
+	if (!isPumpOn)
+	{
+		TURN_ON(outputPumpPin);
+		isPumpOn = true;
+		delay(OVERLAP_TIME);
+	}
+}
 
-      if (((sectorsStatus.sectors[manualSector] + (currentSectorStartTime - currentMillis) / 1000 / 60) < sectorDuration) && stopManualSector == false)
-      {
-        if (currentSectorStartTime == 0)
-        {
-          currentSectorStartTime = millis();
-        }
-        TURN_ON(outputPins[manualSector]);
-      }
-      else
-      {
-        TURN_OFF(outputPumpPin);
-        isPumpOn = false;
-        isWaitingManual = true;
-        if (isWaitingManual && previousMillis + OVERLAP_TIME < currentMillis)
-        {
-          TURN_OFF(outputPins[manualSector]);
-          sectorsStatus.sectors[manualSector] = 0;
-          manualSector = -1;
-          sectorDuration = 0;
-          currentSectorStartTime = 0;
-          Serial.println("Manual sector finished");
-          isWaitingManual = false;
-        }
-        else
-        {
-          isWaitingManual = true;
-          return;
-        }
-      }
-    }*/
-    if (runningProgram > -1)
-    {
-      handleProgram(currentMillis);
-    }
-    previousMillis = currentMillis;
-  }
+void handleSector(unsigned long currentMillis)
+{
+	if (stopManualSector)
+	{
+		Serial.println("Stopping manual sector");
+		endSector();
+		return;
+	}
+
+	turnPumpOnAndDelay();
+	if (currentSectorStartTime == 0)
+	{
+		currentSectorStartTime = currentMillis;
+	}
+	if (SHOULD_CHANGE_SECTOR(currentMillis, currentSectorStartTime, sectorDuration))
+	{
+		endSector();
+	}
+	else
+	{
+		Serial.println("Continuing manual sector " + String(manualSector));
+		TURN_ON(outputPins[manualSector]);
+	}
+}
+
+void endSector()
+{
+	TURN_OFF(outputPumpPin);
+	isPumpOn = false;
+	delay(OVERLAP_TIME);
+
+	for (int i = 0; i < SECTOR_QTY; i++)
+	{
+		TURN_OFF(outputPins[i]);
+	}
+	manualSector = -1;
+	sectorDuration = 0;
+	currentSectorStartTime = 0;
+	stopManualSector = false;
+	Serial.println("Manual sector finished");
+}
+
+/**
+ * Changes to the next sector in the program. Skips sectors with 0 duration.
+ * If the next sector is the last one, ends the program.
+ */
+void changeToNextSector(int sector, Programa *programa, unsigned long currentMillis)
+{
+	int previousOnSector = sector;
+	while (programa->sectorDurations[sector + 1] == 0 && sector < SECTOR_QTY - 1)
+	{
+		sector++;
+	}
+	if (sector == SECTOR_QTY - 1)
+	{
+		endProgram(currentMillis);
+	}
+	else
+	{
+		// Paso al siguiente sector. Dejo un intervalo de 10 segs con ambos abiertos
+		TURN_ON(outputPins[sector + 1]);
+		Serial.println("Sector " + String(sector + 1) + " started");
+		delay(OVERLAP_TIME);
+		TURN_OFF(outputPins[previousOnSector]);
+		Serial.println("Sector " + String(previousOnSector) + " finished");
+
+		sectorsStatus.sectors[sectorsStatus.currentSector] = 0;
+		sectorsStatus.currentSector = sector + 1;
+		currentSectorStartTime = currentMillis;
+	}
 }
 
 void handleProgram(unsigned long currentMillis)
 {
-  // Prendo la bomba si no esta prendida
-  if (!isPumpOn)
-  {
-    TURN_ON(outputPumpPin);
-    isPumpOn = true;
-    delay(OVERLAP_TIME);
-  }
-  for (int i = sectorsStatus.currentSector; i < SECTOR_QTY; i++)
-  {
-    Programa programa = settings.programs[(int)runningProgram];
+	if (stopProgram)
+	{
+		Serial.println("Stopping program");
+		endProgram(currentMillis);
+		return;
+	}
 
-    if (currentSectorStartTime == 0)
-    {
-      currentSectorStartTime = currentMillis;
-    }
-    // TODO divide by 1000. 100 is for faster testing
-    if ((currentMillis - currentSectorStartTime) / 100 / 60 < programa.sectorDurations[i])
-    {
-      TURN_ON(outputPins[i]);
+	turnPumpOnAndDelay();
 
-      // Actualizo el tiempo que lleva prendido el sector
-      sectorsStatus.sectors[sectorsStatus.currentSector] = (currentMillis - currentSectorStartTime) / 1000 / 60;
+	for (int i = sectorsStatus.currentSector; i < SECTOR_QTY; i++)
+	{
+		Programa programa = settings.programs[(int)runningProgram];
 
-      Serial.println("Continuing sector " + String(i));
-      // Si el sector no termino de regar, sigo regando
-      break;
-    }
+		if (currentSectorStartTime == 0)
+		{
+			currentSectorStartTime = currentMillis;
+		}
 
-    Serial.println("Ending sector " + String(i));
-
-    // Me salteo los sectores que no tienen duración
-    int previousOnSector = i;
-    while (programa.sectorDurations[i + 1] == 0 && i < SECTOR_QTY - 1)
-    {
-      i++;
-    }
-    if (i == SECTOR_QTY - 1)
-    {
-      endProgram(currentMillis);
-    }
-    else
-    {
-      // Paso al siguiente sector. Dejo un intervalo de 10 segs con ambos abiertos
-      TURN_ON(outputPins[i + 1]);
-      Serial.println("Sector " + String(i + 1) + " started");
-      delay(OVERLAP_TIME);
-      TURN_OFF(outputPins[previousOnSector]);
-      Serial.println("Sector " + String(previousOnSector) + " finished");
-
-      sectorsStatus.sectors[sectorsStatus.currentSector] = 0;
-      sectorsStatus.currentSector = i + 1;
-      currentSectorStartTime = currentMillis;
-    }
-  }
+		if (SHOULD_CHANGE_SECTOR(currentMillis, currentSectorStartTime, programa.sectorDurations[i]))
+		{
+			Serial.println("Ending sector " + String(i));
+			changeToNextSector(i, &programa, currentMillis);
+		}
+		else
+		{
+			TURN_ON(outputPins[i]);
+			Serial.println("Continuing sector " + String(i));
+			break;
+		}
+	}
 }
 
 void endProgram(unsigned long currentMillis)
 {
-  // Si ya regué todos los sectores, termino el programa
-  TURN_OFF(outputPumpPin);
-  isPumpOn = false;
-  delay(OVERLAP_TIME);
-  for (int i = 0; i < SECTOR_QTY; i++)
-  {
-    TURN_OFF(outputPins[i]);
-  }
-  sectorsStatus.currentSector = 0;
-  memset(&sectorsStatus.sectors, 0, sizeof(sectorsStatus.sectors));
-  currentSectorStartTime = 0;
-  runningProgram = -1;
-  Serial.println("Program finished");
+	TURN_OFF(outputPumpPin);
+	isPumpOn = false;
+	delay(OVERLAP_TIME);
+	for (int i = 0; i < SECTOR_QTY; i++)
+	{
+		TURN_OFF(outputPins[i]);
+	}
+	sectorsStatus.currentSector = 0;
+	memset(&sectorsStatus.sectors, 0, sizeof(sectorsStatus.sectors));
+	currentSectorStartTime = 0;
+	runningProgram = -1;
+	stopProgram = false;
+	Serial.println("Program finished");
 }

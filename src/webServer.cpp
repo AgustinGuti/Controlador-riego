@@ -72,7 +72,7 @@ void buildSectorObject(JsonObject *jsonObject)
         (*jsonObject)["sector"] = sector + 1;
         (*jsonObject)["isOn"] = true;
         (*jsonObject)["duration"] = duration;
-        (*jsonObject)["remaining"] = duration - (sectorsStatus.sectors[sector] + (currentSectorStartTime - millis()) / 1000 / 60);
+        (*jsonObject)["remaining"] = calculateRemainingTime(duration);
     }
     else
     {
@@ -80,8 +80,28 @@ void buildSectorObject(JsonObject *jsonObject)
         (*jsonObject)["sector"] = sector + 1;
         (*jsonObject)["isOn"] = true;
         (*jsonObject)["duration"] = sectorDuration;
-        (*jsonObject)["remaining"] = sectorDuration - (sectorsStatus.sectors[sector] + (currentSectorStartTime - millis()) / 1000 / 60);
+        (*jsonObject)["remaining"] = calculateRemainingTime(sectorDuration);
+
+        Serial.println("Start:" + String(currentSectorStartTime));
     }
+}
+
+int calculateRemainingTime(int duration)
+{
+    int remaining;
+    if (currentSectorStartTime == 0)
+    {
+        remaining = duration;
+    }
+    else
+    {
+        remaining = duration - (millis() - currentSectorStartTime) / 1000 / 60;
+        if (remaining < 0)
+        {
+            remaining = 0;
+        }
+    }
+    return remaining;
 }
 
 void handleSectorGet()
@@ -264,10 +284,8 @@ void handleSectorStart()
 
     sector--;
 
-    DynamicJsonDocument jsonDocumentAnswer(JSON_PROGRAM_SIZE); // TODO calculate size
-    JsonArray jsonArray = jsonDocumentAnswer.to<JsonArray>();
-
-    JsonObject jsonObject = jsonArray.createNestedObject();
+    DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
+    JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
     if (manualSector == -1 && runningProgram == -1)
     {
@@ -283,23 +301,25 @@ void handleSectorStart()
         }
 
         sectorDuration = jsonDocument["duration"].as<unsigned int>();
+        Serial.println("Sector duration:" + String(sectorDuration));
         if (sectorDuration == 0)
         {
             sectorDuration = 0;
             jsonObject["error"] = "Duration must be greater than 0";
             String response;
-            serializeJson(jsonArray, response);
+            serializeJson(jsonObject, response);
 
             server.send(400, "application/json", response);
             return;
         }
+
         manualSector = sector;
     }
     else
     {
         jsonObject["error"] = "Sector already running";
         String response;
-        serializeJson(jsonArray, response);
+        serializeJson(jsonObject, response);
 
         server.send(400, "application/json", response);
         return;
@@ -308,7 +328,7 @@ void handleSectorStart()
     buildSectorObject(&jsonObject);
 
     String response;
-    serializeJson(jsonArray, response);
+    serializeJson(jsonObject, response);
 
     receivedChange = true;
     server.send(200, "application/json", response);
@@ -327,20 +347,19 @@ void handleSectorStop()
 
     sector--;
 
-    DynamicJsonDocument jsonDocumentAnswer(JSON_PROGRAM_SIZE); // TODO calculate size
-    JsonArray jsonArray = jsonDocumentAnswer.to<JsonArray>();
-
-    JsonObject jsonObject = jsonArray.createNestedObject();
+    DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
+    JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
     if (manualSector == sector)
     {
         stopManualSector = true;
+        manualSector = -1;
     }
     else
     {
         jsonObject["error"] = "Sector not running";
         String response;
-        serializeJson(jsonArray, response);
+        serializeJson(jsonObject, response);
 
         server.send(400, "application/json", response);
         return;
@@ -349,7 +368,7 @@ void handleSectorStop()
     buildSectorObject(&jsonObject);
 
     String response;
-    serializeJson(jsonArray, response);
+    serializeJson(jsonObject, response);
 
     receivedChange = true;
     server.send(200, "application/json", response);
