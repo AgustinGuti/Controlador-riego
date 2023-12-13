@@ -5,12 +5,14 @@
 
 ESP8266WebServer server(80); // Create an instance of the server on port 80
 
+void handleSectorGet();
 void handleProgramPost();
 void handleProgramGet();
 void handleProgramsGet();
 void handleProgramStart();
 void handleProgramStop();
-void handleSetEnabled();
+void handleSectorStart();
+void handleSectorStop();
 
 bool receivedChange = false;
 
@@ -19,12 +21,14 @@ void startWebServer()
     // TODO add authentication
     server.onNotFound([]()
                       { server.send(404, "text/plain", "Not found"); });
-    server.on("/programs", handleProgramsGet);
-    server.on("/program", handleProgramGet);
     server.on("/program", HTTP_POST, handleProgramPost);
     server.on("/program/start", HTTP_POST, handleProgramStart);
     server.on("/program/stop", HTTP_POST, handleProgramStop);
-    server.on("/enable", HTTP_POST, handleSetEnabled);
+    server.on("/sector/start", HTTP_POST, handleSectorStart);
+    server.on("/sector/stop", HTTP_POST, handleSectorStop);
+    server.on("/sector", handleSectorGet);
+    server.on("/programs", handleProgramsGet);
+    server.on("/program", handleProgramGet);
 
     ElegantOTA.begin(&server); // Start ElegantOTA
     server.begin();            // Start the server
@@ -42,30 +46,63 @@ void buildProgramObject(JsonObject *jsonObject, int program)
     Programa programa = settings.programs[program];
 
     (*jsonObject)["program"] = program + 1;
-    (*jsonObject)["startTime"] = programa.horaInicio;
-    (*jsonObject)["enabled"] = IS_ENABLED(programa) == 1;
-    (*jsonObject)["manual"] = IS_MANUAL(programa) == 1;
-    (*jsonObject)["isOn"] = IS_ON(programa) == 1;
+    (*jsonObject)["isOn"] = runningProgram == program;
     JsonArray jsonArray = jsonObject->createNestedArray("sectorDurations");
     for (int i = 0; i < SECTOR_QTY; i++)
     {
         int duration = programa.sectorDurations[i];
         jsonArray.add(duration);
     }
+}
 
-    int dayBitmask = 0;
-    for (int j = 0; j < 7; j++)
+void buildSectorObject(JsonObject *jsonObject)
+{
+    if (manualSector == -1 && runningProgram == -1)
     {
-        dayBitmask |= (programa.dias & (1 << j)) ? (1 << j) : 0;
+        (*jsonObject)["sector"] = -1;
+        (*jsonObject)["isOn"] = false;
+        (*jsonObject)["duration"] = 0;
+        (*jsonObject)["remaining"] = 0;
     }
-    (*jsonObject)["days"] = dayBitmask;
+    else if (manualSector == -1)
+    {
+        Programa programa = settings.programs[(int)runningProgram];
+        int sector = sectorsStatus.currentSector;
+        int duration = programa.sectorDurations[sector];
+        (*jsonObject)["sector"] = sector + 1;
+        (*jsonObject)["isOn"] = true;
+        (*jsonObject)["duration"] = duration;
+        (*jsonObject)["remaining"] = duration - (sectorsStatus.sectors[sector] + (currentSectorStartTime - millis()) / 1000 / 60);
+    }
+    else
+    {
+        int sector = manualSector;
+        (*jsonObject)["sector"] = sector + 1;
+        (*jsonObject)["isOn"] = true;
+        (*jsonObject)["duration"] = sectorDuration;
+        (*jsonObject)["remaining"] = sectorDuration - (sectorsStatus.sectors[sector] + (currentSectorStartTime - millis()) / 1000 / 60);
+    }
+}
+
+void handleSectorGet()
+{
+    DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
+    JsonObject jsonObject = jsonDocument.to<JsonObject>();
+
+    buildSectorObject(&jsonObject);
+
+    String response;
+    serializeJson(jsonObject, response);
+
+    Serial.println("Sector get response:" + response);
+
+    server.send(200, "application/json", response);
 }
 
 void handleProgramsGet()
 {
     DynamicJsonDocument jsonDocument(JSON_ALL_SIZE);
     JsonObject jsonGeneralObject = jsonDocument.to<JsonObject>();
-    jsonGeneralObject["enabled"] = settings.allEnabled;
     JsonArray jsonArray = jsonGeneralObject.createNestedArray("programs");
 
     for (int i = 0; i < PROGRAM_QTY; i++)
@@ -95,6 +132,8 @@ void handleProgramGet()
         return;
     }
 
+    program--;
+
     DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
     JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
@@ -108,10 +147,9 @@ void handleProgramGet()
     server.send(200, "application/json", response);
 }
 
-// TODO add authentication
 void handleProgramPost()
 {
-    Serial.println("Sector post");
+    Serial.println("Program post");
     String id = server.arg(0);
     int program = atoi(id.c_str());
 
@@ -138,6 +176,8 @@ void handleProgramPost()
 
     Programa programa = fromJson(jsonDocument.as<JsonObject>());
 
+    Serial.println(toString(programa, program));
+
     Serial.println("Saving to EEPROM");
     // TODO uncomment after testing
     //    EEPROM.put(calculateProgramOffset(program), programas);
@@ -160,29 +200,21 @@ void handleProgramStart()
 
     program--;
 
-    DynamicJsonDocument jsonDocumentAnswer(JSON_PROGRAM_SIZE); // TODO calculate size
-    JsonArray jsonArray = jsonDocumentAnswer.to<JsonArray>();
+    DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
+    JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
-    JsonObject jsonObject = jsonArray.createNestedObject();
-
-    if (programToRun == -1)
+    Serial.println("Running program:" + String(runningProgram));
+    if (runningProgram == -1)
     {
-        programToRun = program;
-    }
-    else
-    {
-        jsonObject["error"] = "Program already running";
-        String response;
-        serializeJson(jsonArray, response);
-
-        server.send(400, "application/json", response);
-        return;
+        runningProgram = program;
     }
 
-    jsonObject["program"] = program + 1;
+    buildProgramObject(&jsonObject, program);
 
     String response;
-    serializeJson(jsonArray, response);
+    serializeJson(jsonObject, response);
+
+    Serial.println("Sector start response:" + response);
 
     receivedChange = true;
     server.send(200, "application/json", response);
@@ -201,18 +233,71 @@ void handleProgramStop()
 
     program--;
 
+    DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
+    JsonObject jsonObject = jsonDocument.to<JsonObject>();
+
+    if (runningProgram == program)
+    {
+        stopProgram = true;
+        runningProgram = -1;
+    }
+
+    buildProgramObject(&jsonObject, program);
+
+    String response;
+    serializeJson(jsonObject, response);
+
+    receivedChange = true;
+    server.send(200, "application/json", response);
+}
+
+void handleSectorStart()
+{
+    String id = server.arg(0);
+    int sector = atoi(id.c_str());
+    Serial.println("Sector start:" + String(sector));
+    if (sector < 1 || sector > SECTOR_QTY)
+    {
+        server.send(404, "text/plain", "Not found");
+        return;
+    }
+
+    sector--;
+
     DynamicJsonDocument jsonDocumentAnswer(JSON_PROGRAM_SIZE); // TODO calculate size
     JsonArray jsonArray = jsonDocumentAnswer.to<JsonArray>();
 
     JsonObject jsonObject = jsonArray.createNestedObject();
 
-    if (programToRun == program)
+    if (manualSector == -1 && runningProgram == -1)
     {
-        stopProgram = true;
+        DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
+        DeserializationError error = deserializeJson(jsonDocument, server.arg("plain"));
+
+        if (error)
+        {
+            Serial.print("Failed to parse JSON: ");
+            Serial.println(error.c_str());
+            server.send(400, "text/plain", "Bad Request - Invalid JSON");
+            return;
+        }
+
+        sectorDuration = jsonDocument["duration"].as<unsigned int>();
+        if (sectorDuration == 0)
+        {
+            sectorDuration = 0;
+            jsonObject["error"] = "Duration must be greater than 0";
+            String response;
+            serializeJson(jsonArray, response);
+
+            server.send(400, "application/json", response);
+            return;
+        }
+        manualSector = sector;
     }
     else
     {
-        jsonObject["error"] = "Program not running";
+        jsonObject["error"] = "Sector already running";
         String response;
         serializeJson(jsonArray, response);
 
@@ -220,7 +305,7 @@ void handleProgramStop()
         return;
     }
 
-    jsonObject["program"] = program + 1;
+    buildSectorObject(&jsonObject);
 
     String response;
     serializeJson(jsonArray, response);
@@ -229,36 +314,42 @@ void handleProgramStop()
     server.send(200, "application/json", response);
 }
 
-void handleSetEnabled()
+void handleSectorStop()
 {
-    DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE); // TODO calculate size
-    DeserializationError error = deserializeJson(jsonDocument, server.arg("plain"));
-
-    if (error)
+    String id = server.arg(0);
+    int sector = atoi(id.c_str());
+    Serial.println("Sector stop:" + String(sector));
+    if (sector < 1 || sector > SECTOR_QTY)
     {
-        Serial.print("Failed to parse JSON: ");
-        Serial.println(error.c_str());
-        server.send(400, "text/plain", "Bad Request - Invalid JSON");
+        server.send(404, "text/plain", "Not found");
         return;
     }
 
-    Serial.println(server.arg("plain"));
-    Serial.println(jsonDocument["enabled"].as<bool>());
-
-    settings.allEnabled = jsonDocument["enabled"].as<bool>();
-
-    Serial.println("Saving to EEPROM");
+    sector--;
 
     DynamicJsonDocument jsonDocumentAnswer(JSON_PROGRAM_SIZE); // TODO calculate size
     JsonArray jsonArray = jsonDocumentAnswer.to<JsonArray>();
 
     JsonObject jsonObject = jsonArray.createNestedObject();
-    jsonObject["enabled"] = settings.allEnabled;
+
+    if (manualSector == sector)
+    {
+        stopManualSector = true;
+    }
+    else
+    {
+        jsonObject["error"] = "Sector not running";
+        String response;
+        serializeJson(jsonArray, response);
+
+        server.send(400, "application/json", response);
+        return;
+    }
+
+    buildSectorObject(&jsonObject);
 
     String response;
     serializeJson(jsonArray, response);
-
-    Serial.println("Sectors get response:" + response);
 
     receivedChange = true;
     server.send(200, "application/json", response);
