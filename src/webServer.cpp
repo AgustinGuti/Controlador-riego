@@ -13,6 +13,7 @@ void handleProgramStart();
 void handleProgramStop();
 void handleSectorStart();
 void handleSectorStop();
+int calculateRemainingTime(int duration);
 
 bool receivedChange = false;
 

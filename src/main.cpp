@@ -6,16 +6,19 @@
 #include "utils.h"
 
 #define EEPROM_SIZE 512
-#define CHECK_INTERVAL 500 // Todo change to 5 * 1000 * 60 // 5 minutes
+#define CHECK_INTERVAL 10 * 1000 // Todo change to 5 * 1000 * 60 // 5 minutes
 
-#define OVERLAP_TIME 1 * 1000 // TODO change to 10 seconds
+#define RX0 1
+#define TX0 3
+
+#define OVERLAP_TIME 5 * 1000 // TODO change to 10 seconds
 
 #define TURN_ON(X) digitalWrite((X), LOW) // X is the pin number
 #define TURN_OFF(X) digitalWrite((X), HIGH)
 
-// TODO change to / 1000, 100 is for faster testing
+// DONE change to / 1000, 100 is for faster testing
 // Checks if the sector should change. If the current time minus the start time is greater than the duration, change sector
-#define SHOULD_CHANGE_SECTOR(CURR, START, DUR) ((CURR) - (START)) / 100 / 60 >= (DUR)
+#define SHOULD_CHANGE_SECTOR(CURR, START, DUR) ((CURR) - (START)) / 1000 / 60 >= (DUR)
 
 signed char runningProgram = -1;
 bool stopProgram = false;
@@ -33,8 +36,9 @@ void handleSector(unsigned long currentMillis);
 const char *ssid = "TP-Link_EBB6";
 const char *password = "76450853";
 
-int outputPins[SECTOR_QTY] = {D0, D1, D2, D3, D4, D5, D6, D7};
-int outputPumpPin = D8; // TODO find a suitable pin, this one prevents the board from booting
+int outputPins[SECTOR_QTY] = {D0, D1, D2, D3, D4, D7, RX0, TX0};
+int outputPumpPin = D6;
+int outputTankValvePin = D5;
 
 uint addr = 0;
 
@@ -45,8 +49,7 @@ Settings settings;
 
 void setup()
 {
-	Serial.begin(115200);
-	Serial.println("Booting: Version" + String(VERSION));
+	//	Serial.begin(115200);
 
 	EEPROM.begin(EEPROM_SIZE);
 
@@ -65,7 +68,6 @@ void setup()
 	while (WiFi.status() != WL_CONNECTED)
 	{
 		delay(500);
-		Serial.print(".");
 	}
 	// TODO add local network if it cant connect to the internet
 
@@ -78,6 +80,9 @@ void setup()
 	}
 	pinMode(outputPumpPin, OUTPUT);
 	TURN_OFF(outputPumpPin);
+
+	pinMode(outputTankValvePin, OUTPUT);
+	TURN_OFF(outputTankValvePin);
 
 	memset(&sectorsStatus, 0, sizeof(sectorsStatus));
 }
@@ -97,7 +102,7 @@ void loop()
 	if (receivedChange || (currentMillis - previousMillis >= CHECK_INTERVAL))
 	{
 		receivedChange = false;
-		if (manualSector > -1 && sectorDuration > 0 || stopManualSector)
+		if ((manualSector > -1 && sectorDuration > 0) || stopManualSector)
 		{
 			handleSector(currentMillis);
 		}
@@ -109,13 +114,14 @@ void loop()
 	}
 }
 
-void turnPumpOnAndDelay()
+void delayAndTurnPumpOn()
 {
 	if (!isPumpOn)
 	{
+		delay(OVERLAP_TIME);
+		TURN_ON(outputTankValvePin);
 		TURN_ON(outputPumpPin);
 		isPumpOn = true;
-		delay(OVERLAP_TIME);
 	}
 }
 
@@ -123,12 +129,10 @@ void handleSector(unsigned long currentMillis)
 {
 	if (stopManualSector)
 	{
-		Serial.println("Stopping manual sector");
 		endSector();
 		return;
 	}
 
-	turnPumpOnAndDelay();
 	if (currentSectorStartTime == 0)
 	{
 		currentSectorStartTime = currentMillis;
@@ -139,8 +143,8 @@ void handleSector(unsigned long currentMillis)
 	}
 	else
 	{
-		Serial.println("Continuing manual sector " + String(manualSector));
 		TURN_ON(outputPins[manualSector]);
+		delayAndTurnPumpOn();
 	}
 }
 
@@ -158,7 +162,8 @@ void endSector()
 	sectorDuration = 0;
 	currentSectorStartTime = 0;
 	stopManualSector = false;
-	Serial.println("Manual sector finished");
+
+	TURN_OFF(outputTankValvePin);
 }
 
 /**
@@ -180,10 +185,8 @@ void changeToNextSector(int sector, Programa *programa, unsigned long currentMil
 	{
 		// Paso al siguiente sector. Dejo un intervalo de 10 segs con ambos abiertos
 		TURN_ON(outputPins[sector + 1]);
-		Serial.println("Sector " + String(sector + 1) + " started");
 		delay(OVERLAP_TIME);
 		TURN_OFF(outputPins[previousOnSector]);
-		Serial.println("Sector " + String(previousOnSector) + " finished");
 
 		sectorsStatus.sectors[sectorsStatus.currentSector] = 0;
 		sectorsStatus.currentSector = sector + 1;
@@ -195,12 +198,9 @@ void handleProgram(unsigned long currentMillis)
 {
 	if (stopProgram)
 	{
-		Serial.println("Stopping program");
 		endProgram(currentMillis);
 		return;
 	}
-
-	turnPumpOnAndDelay();
 
 	for (int i = sectorsStatus.currentSector; i < SECTOR_QTY; i++)
 	{
@@ -213,13 +213,12 @@ void handleProgram(unsigned long currentMillis)
 
 		if (SHOULD_CHANGE_SECTOR(currentMillis, currentSectorStartTime, programa.sectorDurations[i]))
 		{
-			Serial.println("Ending sector " + String(i));
 			changeToNextSector(i, &programa, currentMillis);
 		}
 		else
 		{
 			TURN_ON(outputPins[i]);
-			Serial.println("Continuing sector " + String(i));
+			delayAndTurnPumpOn();
 			break;
 		}
 	}
@@ -239,5 +238,5 @@ void endProgram(unsigned long currentMillis)
 	currentSectorStartTime = 0;
 	runningProgram = -1;
 	stopProgram = false;
-	Serial.println("Program finished");
+	TURN_OFF(outputTankValvePin);
 }
