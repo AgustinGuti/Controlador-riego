@@ -6,12 +6,12 @@
 #include "utils.h"
 
 #define EEPROM_SIZE 512
-#define CHECK_INTERVAL 10 * 1000 // Todo change to 5 * 1000 * 60 // 5 minutes
+#define CHECK_INTERVAL 10 * 1000
 
 #define RX0 1
 #define TX0 3
 
-#define OVERLAP_TIME 5 * 1000 // TODO change to 10 seconds
+#define OVERLAP_TIME 5 * 1000
 
 #define TURN_ON(X) digitalWrite((X), LOW) // X is the pin number
 #define TURN_OFF(X) digitalWrite((X), HIGH)
@@ -40,8 +40,6 @@ int outputPins[SECTOR_QTY] = {D0, D1, D2, D3, D4, D7, RX0, TX0};
 int outputPumpPin = D6;
 int outputTankValvePin = D5;
 
-uint addr = 0;
-
 unsigned long previousMillis = 0;
 
 SectorsStatus sectorsStatus;
@@ -49,15 +47,16 @@ Settings settings;
 
 void setup()
 {
-	//	Serial.begin(115200);
+	// Serial.begin(115200);
 
-	EEPROM.begin(EEPROM_SIZE);
+	EEPROM.begin(sizeof(settings));
 
-	EEPROM.get(addr, settings);
+	EEPROM.get(0, settings);
 
 	WiFi.mode(WIFI_STA);
 
-	IPAddress staticIP(192, 168, 0, 200); // Set your desired static IP address
+	// TODO change for production
+	IPAddress staticIP(192, 168, 0, 201); // Set your desired static IP address
 	IPAddress gateway(192, 168, 0, 1);	  // Set your router's IP address
 	IPAddress subnet(255, 255, 255, 0);	  // Set your subnet mask
 
@@ -70,7 +69,6 @@ void setup()
 		delay(500);
 	}
 	// TODO add local network if it cant connect to the internet
-
 	startWebServer();
 
 	for (int i = 0; i < SECTOR_QTY; i++)
@@ -102,7 +100,7 @@ void loop()
 	if (receivedChange || (currentMillis - previousMillis >= CHECK_INTERVAL))
 	{
 		receivedChange = false;
-		if ((manualSector > -1 && sectorDuration > 0) || stopManualSector)
+		if (manualSector > -1 && sectorDuration > 0)
 		{
 			handleSector(currentMillis);
 		}

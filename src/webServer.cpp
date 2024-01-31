@@ -19,7 +19,6 @@ bool receivedChange = false;
 
 void startWebServer()
 {
-    // TODO add authentication
     server.onNotFound([]()
                       { server.send(404, "text/plain", "Not found"); });
     server.on("/program", HTTP_POST, handleProgramPost);
@@ -200,10 +199,11 @@ void handleProgramPost()
     Serial.println(toString(programa, program));
 
     Serial.println("Saving to EEPROM");
-    // TODO uncomment after testing
-    //    EEPROM.put(calculateProgramOffset(program), programas);
 
     settings.programs[program] = programa;
+    EEPROM.put(calculateProgramOffset(program), programa);
+    EEPROM.commit();
+
     receivedChange = true;
     server.send(200, "text/plain", "OK");
 }
@@ -245,7 +245,7 @@ void handleProgramStop()
 {
     String id = server.arg(0);
     int program = atoi(id.c_str());
-    Serial.println("Sector stop:" + String(program));
+    Serial.println("Program stop:" + String(program));
     if (program < 1 || program > SECTOR_QTY)
     {
         server.send(404, "text/plain", "Not found");
@@ -260,7 +260,6 @@ void handleProgramStop()
     if (runningProgram == program)
     {
         stopProgram = true;
-        runningProgram = -1;
     }
 
     buildProgramObject(&jsonObject, program);
@@ -354,7 +353,6 @@ void handleSectorStop()
     if (manualSector == sector)
     {
         stopManualSector = true;
-        manualSector = -1;
     }
     else
     {
