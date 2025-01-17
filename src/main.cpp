@@ -36,6 +36,10 @@ void handleSector(unsigned long currentMillis);
 const char *ssid = "TP-Link_EBB6";
 const char *password = "76450853";
 
+const char *ntpServer = "time.google.com";
+const long gmtOffset_sec = -3 * 3600; // Adjust for timezone
+const int daylightOffset_sec = 0;
+
 int outputPins[SECTOR_QTY] = {D0, D1, D2, D3, D4, D7, RX0, TX0};
 int outputPumpPin = D6;
 int outputTankValvePin = D5;
@@ -75,6 +79,30 @@ void setup()
 	{
 		delay(500);
 	}
+	// Configure time
+
+	configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+
+	// Wait for time to be set
+	struct tm timeInfo;
+	unsigned long startMillis = millis();
+	unsigned long timeout = 10000; // Timeout after 10 seconds
+
+	while (!getLocalTime(&timeInfo))
+	{
+		if (millis() - startMillis > timeout)
+		{
+			Serial.println("Timeout: Failed to obtain time");
+			break;
+		}
+		Serial.println("Failed to obtain time, retrying...");
+		delay(1000);
+	}
+
+	// Print the time
+	// Serial.println("Time synchronized:");
+	// Serial.println(&timeInfo, "%A, %B %d %Y %H:%M:%S");
+
 	// TODO add local network if it cant connect to the internet
 	startWebServer();
 
@@ -96,6 +124,9 @@ unsigned long currentSectorStartTime = 0;
 
 bool isPumpOn = false;
 
+const int startHourWindow = 18;
+const int startMinuteWindow = 45;
+
 void loop()
 {
 	handleWebServer();
@@ -111,6 +142,25 @@ void loop()
 		{
 			handleSector(currentMillis);
 		}
+
+		struct tm timeInfo;
+		if (getLocalTime(&timeInfo))
+		{
+			int currentHour = timeInfo.tm_hour;
+			int currentMinute = timeInfo.tm_min;
+			int day = timeInfo.tm_mday;
+
+			if (currentHour == startHourWindow && currentMinute >= startMinuteWindow &&
+				currentMinute < startMinuteWindow + 1 && runningProgram == -1) // Allow a 1-minute window
+			{
+				runningProgram = 0;
+			}
+			{
+				// Start program
+				runningProgram = 0;
+			}
+		}
+
 		if (runningProgram > -1)
 		{
 			handleProgram(currentMillis);
