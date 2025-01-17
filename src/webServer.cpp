@@ -1,7 +1,7 @@
 #include "webServer.h"
 
 #define JSON_ALL_SIZE 1024
-#define JSON_PROGRAM_SIZE 256
+#define JSON_PROGRAM_SIZE 512
 
 ESP8266WebServer server(80); // Create an instance of the server on port 80
 
@@ -52,6 +52,12 @@ void buildProgramObject(JsonObject *jsonObject, int program)
     {
         int duration = programa.sectorDurations[i];
         jsonArray.add(duration);
+    }
+    JsonArray jsonArray2 = jsonObject->createNestedArray("sectorOrder");
+    for (int i = 0; i < SECTOR_QTY; i++)
+    {
+        int sector = programa.sectorOrderPositions[i];
+        jsonArray2.add(sector);
     }
 }
 

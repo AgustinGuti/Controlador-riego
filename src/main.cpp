@@ -53,10 +53,17 @@ void setup()
 
 	EEPROM.get(0, settings);
 
+	boolean changes = validateSettings(&settings);
+	if (changes)
+	{
+		EEPROM.put(0, settings);
+		EEPROM.commit();
+	}
+
 	WiFi.mode(WIFI_STA);
 
 	// TODO change for production
-	IPAddress staticIP(192, 168, 0, 201); // Set your desired static IP address
+	IPAddress staticIP(192, 168, 0, 200); // Set your desired static IP address
 	IPAddress gateway(192, 168, 0, 1);	  // Set your router's IP address
 	IPAddress subnet(255, 255, 255, 0);	  // Set your subnet mask
 
@@ -168,26 +175,29 @@ void endSector()
  * Changes to the next sector in the program. Skips sectors with 0 duration.
  * If the next sector is the last one, ends the program.
  */
-void changeToNextSector(int sector, Programa *programa, unsigned long currentMillis)
+void changeToNextSector(int sector, int sectorOrderPosition, Programa *programa, unsigned long currentMillis)
 {
 	int previousOnSector = sector;
-	while (programa->sectorDurations[sector + 1] == 0 && sector < SECTOR_QTY - 1)
+	while (programa->sectorDurations[programa->sectorOrderPositions[sectorOrderPosition + 1]] == 0 && sectorOrderPosition < SECTOR_QTY - 1)
 	{
-		sector++;
+		sectorOrderPosition++;
 	}
-	if (sector == SECTOR_QTY - 1)
+	if (sectorOrderPosition == SECTOR_QTY - 1)
 	{
 		endProgram(currentMillis);
 	}
 	else
 	{
 		// Paso al siguiente sector. Dejo un intervalo de 10 segs con ambos abiertos
-		TURN_ON(outputPins[sector + 1]);
+		int nextSector = programa->sectorOrderPositions[sectorOrderPosition + 1];
+
+		TURN_ON(outputPins[nextSector]);
 		delay(OVERLAP_TIME);
 		TURN_OFF(outputPins[previousOnSector]);
 
 		sectorsStatus.sectors[sectorsStatus.currentSector] = 0;
-		sectorsStatus.currentSector = sector + 1;
+		sectorsStatus.currentSector = nextSector;
+		sectorsStatus.currentSectorPosition = sectorOrderPosition + 1;
 		currentSectorStartTime = currentMillis;
 	}
 }
@@ -200,7 +210,7 @@ void handleProgram(unsigned long currentMillis)
 		return;
 	}
 
-	for (int i = sectorsStatus.currentSector; i < SECTOR_QTY; i++)
+	for (int i = sectorsStatus.currentSectorPosition; i < SECTOR_QTY; i++)
 	{
 		Programa programa = settings.programs[(int)runningProgram];
 
@@ -209,13 +219,15 @@ void handleProgram(unsigned long currentMillis)
 			currentSectorStartTime = currentMillis;
 		}
 
-		if (SHOULD_CHANGE_SECTOR(currentMillis, currentSectorStartTime, programa.sectorDurations[i]))
+		int currentSector = programa.sectorOrderPositions[i];
+		if (SHOULD_CHANGE_SECTOR(currentMillis, currentSectorStartTime, programa.sectorDurations[currentSector]))
 		{
-			changeToNextSector(i, &programa, currentMillis);
+			changeToNextSector(currentSector, i, &programa, currentMillis);
 		}
 		else
 		{
-			TURN_ON(outputPins[i]);
+			sectorsStatus.currentSector = currentSector;
+			TURN_ON(outputPins[currentSector]);
 			delayAndTurnPumpOn();
 			break;
 		}
@@ -232,6 +244,7 @@ void endProgram(unsigned long currentMillis)
 		TURN_OFF(outputPins[i]);
 	}
 	sectorsStatus.currentSector = 0;
+	sectorsStatus.currentSectorPosition = 0;
 	memset(&sectorsStatus.sectors, 0, sizeof(sectorsStatus.sectors));
 	currentSectorStartTime = 0;
 	runningProgram = -1;

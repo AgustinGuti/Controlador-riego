@@ -19,8 +19,9 @@ extern unsigned long currentSectorStartTime;
 
 struct SectorsStatus
 {
-    char sectors[SECTOR_QTY]; // Time each sector has been on
-    int currentSector;        // Current sector being watered
+    char sectors[SECTOR_QTY];  // Time each sector has been on
+    int currentSector;         // Current sector being watered
+    int currentSectorPosition; // The position in the order array of the program
 };
 
 extern SectorsStatus sectorsStatus;

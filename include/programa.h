@@ -10,7 +10,8 @@
 class Programa
 {
 public:
-    unsigned char sectorDurations[SECTOR_QTY]; // duración de cada sector en minutos. Si es 0, el sector no se riega
+    unsigned char sectorOrderPositions[SECTOR_QTY]; // orden de riego de los sectores. Por ejemplo, [2,3,1] significa que se riega el sector 2, luego el 3 y por último el 1
+    unsigned char sectorDurations[SECTOR_QTY];      // duración de cada sector en minutos. Si es 0, el sector no se riega
 };
 
 class Settings
@@ -21,5 +22,7 @@ public:
 
 Programa fromJson(JsonObject jsonObject);
 String toString(Programa programa, int program);
+
+boolean validateSettings(Settings *settings);
 
 #endif
