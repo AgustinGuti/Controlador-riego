@@ -13,7 +13,8 @@ void handleProgramStart();
 void handleProgramStop();
 void handleSectorStart();
 void handleSectorStop();
-int calculateRemainingTime(int duration);
+void handleRiegoSemanaGet();
+void handleRiegoDiaPost();
 
 bool receivedChange = false;
 
@@ -29,6 +30,8 @@ void startWebServer()
     server.on("/sector", handleSectorGet);
     server.on("/programs", handleProgramsGet);
     server.on("/program", handleProgramGet);
+    server.on("/daysWatering", HTTP_GET, handleRiegoSemanaGet);
+    server.on("/dayWatering", HTTP_POST, handleRiegoDiaPost);
 
     ElegantOTA.begin(&server); // Start ElegantOTA
     server.begin();            // Start the server
@@ -41,81 +44,13 @@ void handleWebServer()
     server.handleClient();
 }
 
-void buildProgramObject(JsonObject *jsonObject, int program)
-{
-    Programa programa = settings.programs[program];
-
-    (*jsonObject)["program"] = program + 1;
-    (*jsonObject)["isOn"] = runningProgram == program;
-    JsonArray jsonArray = jsonObject->createNestedArray("sectorDurations");
-    for (int i = 0; i < SECTOR_QTY; i++)
-    {
-        int duration = programa.sectorDurations[i];
-        jsonArray.add(duration);
-    }
-    JsonArray jsonArray2 = jsonObject->createNestedArray("sectorOrder");
-    for (int i = 0; i < SECTOR_QTY; i++)
-    {
-        int sector = programa.sectorOrderPositions[i];
-        jsonArray2.add(sector);
-    }
-}
-
-void buildSectorObject(JsonObject *jsonObject)
-{
-    if (manualSector == -1 && runningProgram == -1)
-    {
-        (*jsonObject)["sector"] = -1;
-        (*jsonObject)["isOn"] = false;
-        (*jsonObject)["duration"] = 0;
-        (*jsonObject)["remaining"] = 0;
-    }
-    else if (manualSector == -1)
-    {
-        Programa programa = settings.programs[(int)runningProgram];
-        int sector = sectorsStatus.currentSector;
-        int duration = programa.sectorDurations[sector];
-        (*jsonObject)["sector"] = sector + 1;
-        (*jsonObject)["isOn"] = true;
-        (*jsonObject)["duration"] = duration;
-        (*jsonObject)["remaining"] = calculateRemainingTime(duration);
-    }
-    else
-    {
-        int sector = manualSector;
-        (*jsonObject)["sector"] = sector + 1;
-        (*jsonObject)["isOn"] = true;
-        (*jsonObject)["duration"] = sectorDuration;
-        (*jsonObject)["remaining"] = calculateRemainingTime(sectorDuration);
-
-        Serial.println("Start:" + String(currentSectorStartTime));
-    }
-}
-
-int calculateRemainingTime(int duration)
-{
-    int remaining;
-    if (currentSectorStartTime == 0)
-    {
-        remaining = duration;
-    }
-    else
-    {
-        remaining = duration - (millis() - currentSectorStartTime) / 1000 / 60;
-        if (remaining < 0)
-        {
-            remaining = 0;
-        }
-    }
-    return remaining;
-}
-
 void handleSectorGet()
 {
     DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
     JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
-    buildSectorObject(&jsonObject);
+    Programa programa = settings.programs[(int)runningProgram];
+    buildSectorObject(&jsonObject, programa);
 
     String response;
     serializeJson(jsonObject, response);
@@ -135,7 +70,8 @@ void handleProgramsGet()
     {
         JsonObject jsonObject = jsonArray.createNestedObject();
 
-        buildProgramObject(&jsonObject, i);
+        Programa programa = settings.programs[i];
+        buildProgramObject(&jsonObject, programa, i);
 
         String debug;
         serializeJson(jsonObject, debug);
@@ -163,7 +99,8 @@ void handleProgramGet()
     DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
     JsonObject jsonObject = jsonDocument.to<JsonObject>();
 
-    buildProgramObject(&jsonObject, program);
+    Programa programa = settings.programs[program];
+    buildProgramObject(&jsonObject, programa, program);
 
     String response;
     serializeJson(jsonObject, response);
@@ -236,7 +173,8 @@ void handleProgramStart()
         runningProgram = program;
     }
 
-    buildProgramObject(&jsonObject, program);
+    Programa programa = settings.programs[program];
+    buildProgramObject(&jsonObject, programa, program);
 
     String response;
     serializeJson(jsonObject, response);
@@ -268,7 +206,8 @@ void handleProgramStop()
         stopProgram = true;
     }
 
-    buildProgramObject(&jsonObject, program);
+    Programa programa = settings.programs[program];
+    buildProgramObject(&jsonObject, programa, program);
 
     String response;
     serializeJson(jsonObject, response);
@@ -331,7 +270,8 @@ void handleSectorStart()
         return;
     }
 
-    buildSectorObject(&jsonObject);
+    Programa programa = settings.programs[(int)runningProgram];
+    buildSectorObject(&jsonObject, programa);
 
     String response;
     serializeJson(jsonObject, response);
@@ -370,11 +310,64 @@ void handleSectorStop()
         return;
     }
 
-    buildSectorObject(&jsonObject);
+    Programa programa = settings.programs[(int)runningProgram];
+    buildSectorObject(&jsonObject, programa);
 
     String response;
     serializeJson(jsonObject, response);
 
     receivedChange = true;
     server.send(200, "application/json", response);
+}
+
+void handleRiegoSemanaGet()
+{
+    DynamicJsonDocument jsonDocument(JSON_ALL_SIZE);
+    JsonObject jsonGeneralObject = jsonDocument.to<JsonObject>();
+    JsonArray jsonArray = jsonGeneralObject.createNestedArray("daysWatering");
+
+    for (int i = 0; i < 7; i++)
+    {
+        JsonObject jsonObject = jsonArray.createNestedObject();
+
+        RiegoDia riegoDia = settings.semana.dias[i];
+        buildRiegoDiaObject(&jsonObject, riegoDia);
+    }
+
+    String response;
+    serializeJson(jsonGeneralObject, response);
+
+    server.send(200, "application/json", response);
+}
+
+void handleRiegoDiaPost()
+{
+    String id = server.arg(0);
+    int day = atoi(id.c_str());
+
+    if (day < 0 || day > 6)
+    {
+        server.send(404, "text/plain", "Not found");
+        return;
+    }
+
+    DynamicJsonDocument jsonDocument(JSON_PROGRAM_SIZE);
+    DeserializationError error = deserializeJson(jsonDocument, server.arg("plain"));
+
+    if (error)
+    {
+        Serial.print("Failed to parse JSON: ");
+        Serial.println(error.c_str());
+        server.send(400, "text/plain", "Bad Request - Invalid JSON");
+        return;
+    }
+
+    RiegoDia riegoDia = riegoDiaFromJson(jsonDocument.as<JsonObject>());
+
+    settings.semana.dias[day] = riegoDia;
+    EEPROM.put(calculateRiegoSemanaOffset(day), riegoDia);
+    EEPROM.commit();
+
+    receivedChange = true;
+    server.send(200, "text/plain", "OK");
 }

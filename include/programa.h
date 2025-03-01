@@ -14,15 +14,9 @@ public:
     unsigned char sectorDurations[SECTOR_QTY];      // duración de cada sector en minutos. Si es 0, el sector no se riega
 };
 
-class Settings
-{
-public:
-    Programa programs[PROGRAM_QTY];
-};
-
 Programa fromJson(JsonObject jsonObject);
 String toString(Programa programa, int program);
-
-boolean validateSettings(Settings *settings);
+void buildSectorObject(JsonObject *jsonObject, Programa programa);
+void buildProgramObject(JsonObject *jsonObject, Programa programa, int programId);
 
 #endif

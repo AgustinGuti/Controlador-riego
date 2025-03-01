@@ -1,8 +1,5 @@
-#ifndef UTILS_H_2579621476717839321
-#define UTILS_H_2579621476717839321
-
-#include <Arduino.h>
-#include "programa.h"
+#ifndef UTILS_H
+#define UTILS_H
 
 #define VERSION "0.1"
 #define SECTOR_QTY 8
@@ -25,7 +22,5 @@ struct SectorsStatus
 };
 
 extern SectorsStatus sectorsStatus;
-
-uint calculateProgramOffset(char sector);
 
 #endif

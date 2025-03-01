@@ -1,9 +1,10 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>
-#include "programa.h"
+#include "settings.h"
 #include "webServer.h"
-#include "utils.h"
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 #define EEPROM_SIZE 512
 #define CHECK_INTERVAL 10 * 1000
@@ -36,7 +37,6 @@ void handleSector(unsigned long currentMillis);
 const char *ssid = "TP-Link_EBB6";
 const char *password = "76450853";
 
-const char *ntpServer = "time.google.com";
 const long gmtOffset_sec = -3 * 3600; // Adjust for timezone
 const int daylightOffset_sec = 0;
 
@@ -49,6 +49,10 @@ unsigned long previousMillis = 0;
 SectorsStatus sectorsStatus;
 Settings settings;
 
+// Define NTP Client to get time
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "216.239.35.0", gmtOffset_sec);
+
 void setup()
 {
 	// Serial.begin(115200);
@@ -58,6 +62,7 @@ void setup()
 	EEPROM.get(0, settings);
 
 	boolean changes = validateSettings(&settings);
+
 	if (changes)
 	{
 		EEPROM.put(0, settings);
@@ -75,33 +80,12 @@ void setup()
 
 	WiFi.begin(ssid, password);
 
+	timeClient.begin();
+
 	while (WiFi.status() != WL_CONNECTED)
 	{
 		delay(500);
 	}
-	// Configure time
-
-	configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-
-	// Wait for time to be set
-	struct tm timeInfo;
-	unsigned long startMillis = millis();
-	unsigned long timeout = 10000; // Timeout after 10 seconds
-
-	while (!getLocalTime(&timeInfo))
-	{
-		if (millis() - startMillis > timeout)
-		{
-			Serial.println("Timeout: Failed to obtain time");
-			break;
-		}
-		Serial.println("Failed to obtain time, retrying...");
-		delay(1000);
-	}
-
-	// Print the time
-	// Serial.println("Time synchronized:");
-	// Serial.println(&timeInfo, "%A, %B %d %Y %H:%M:%S");
 
 	// TODO add local network if it cant connect to the internet
 	startWebServer();
@@ -124,8 +108,8 @@ unsigned long currentSectorStartTime = 0;
 
 bool isPumpOn = false;
 
-const int startHourWindow = 18;
-const int startMinuteWindow = 45;
+const int startHourWindow = 20;
+const int startMinuteWindow = 30;
 
 void loop()
 {
@@ -143,22 +127,19 @@ void loop()
 			handleSector(currentMillis);
 		}
 
-		struct tm timeInfo;
-		if (getLocalTime(&timeInfo))
-		{
-			int currentHour = timeInfo.tm_hour;
-			int currentMinute = timeInfo.tm_min;
-			int day = timeInfo.tm_mday;
+		timeClient.update();
 
-			if (currentHour == startHourWindow && currentMinute >= startMinuteWindow &&
-				currentMinute < startMinuteWindow + 1 && runningProgram == -1) // Allow a 1-minute window
-			{
-				runningProgram = 0;
-			}
-			{
-				// Start program
-				runningProgram = 0;
-			}
+		int currentHour = timeClient.getHours();
+		int currentMinute = timeClient.getMinutes();
+		int day = timeClient.getDay();
+
+		RiegoDia riegoDia = settings.semana.dias[day];
+		unsigned int currentMinutes = currentHour * 60 + currentMinute;
+
+		if (riegoDia.active && currentMinutes == riegoDia.startTime &&
+			currentMinutes < riegoDia.startTime + 1 && runningProgram == -1) // Allow a 1-minute window
+		{
+			runningProgram = riegoDia.programId;
 		}
 
 		if (runningProgram > -1)

@@ -5,8 +5,8 @@
 #include <ArduinoJson.h>
 #include <ElegantOTA.h>
 #include <EEPROM.h>
+#include "settings.h"
 #include "programa.h"
-#include "utils.h"
 
 extern Settings settings;
 
